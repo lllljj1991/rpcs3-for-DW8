@@ -403,7 +403,7 @@ namespace rsx
 
 					if (value == restart)
 					{
-						continue;
+						break;
 					}
 
 					for (u32 freq_it = 0; freq_it < freq_count; freq_it++)

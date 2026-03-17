@@ -35,7 +35,7 @@ namespace rsx
 		{
 			int w = 0, h = 0, channels = 0;
 			int bpp = 0;
-			bool dirty = false;
+			mutable bool dirty = false;
 
 			image_info_base() {}
 			virtual ~image_info_base() {}
@@ -89,6 +89,8 @@ namespace rsx
 
 			void load_files();
 			void free_resources();
+
+			static std::unique_ptr<image_info> load_icon(std::string_view relative_path);
 		};
 
 		struct compiled_resource
@@ -108,7 +110,7 @@ namespace rsx
 
 				u8 texture_ref = image_resource_id::none;
 				font* font_ref = nullptr;
-				void* external_data_ref = nullptr;
+				const void* external_data_ref = nullptr;
 
 				u8 blur_strength = 0;
 
@@ -189,6 +191,7 @@ namespace rsx
 			u16 margin_left = 0;
 			u16 margin_top = 0;
 
+			// NOTE: These two only apply for text. Containers maintain their own scroll values.
 			f32 horizontal_scroll_offset = 0.0f;
 			f32 vertical_scroll_offset = 0.0f;
 
@@ -219,6 +222,18 @@ namespace rsx
 			virtual compiled_resource& get_compiled();
 			void measure_text(u16& width, u16& height, bool ignore_word_wrap = false) const;
 			virtual void set_selected(bool selected) { static_cast<void>(selected); }
+			virtual void set_visible(bool visible) { this->visible = visible; m_is_compiled = false; }
+			virtual bool is_visible() const { return visible; }
+
+			// Calculate the vertical offset for an element of height Y if it were to be placed as a child of this element
+			u16 compute_vertically_centered(u16 element_height);
+
+			// Calculate the horizontal offset for an element of width X if it were to be placed as a child of this element
+			u16 compute_horizontally_centered(u16 element_width);
+
+			// Wrappers for the placement functions
+			u16 compute_vertically_centered(const overlay_element* other) { return compute_vertically_centered(other->h); }
+			u16 compute_horizontally_centered(const overlay_element* other) { return compute_horizontally_centered(other->w); }
 
 		protected:
 			bool m_is_compiled = false; // Only use m_is_compiled as a getter in is_compiled() if possible
@@ -234,6 +249,23 @@ namespace rsx
 
 			virtual overlay_element* add_element(std::unique_ptr<overlay_element>&, int = -1) = 0;
 
+			template<typename T>
+				requires std::is_base_of_v<overlay_element, T>
+			T* add_element(std::unique_ptr<T>& ptr, int offset = -1)
+			{
+				auto _ptr = ensure(dynamic_cast<overlay_element*>(ptr.release()));
+				std::unique_ptr<overlay_element> e{ _ptr };
+				return static_cast<T*>(add_element(e, offset));
+			}
+
+			overlay_element* add_element()
+			{
+				auto ptr = std::make_unique<overlay_element>();
+				return add_element(ptr);
+			}
+
+			virtual void clear_items();
+
 			layout_container();
 
 			void translate(s16 _x, s16 _y) override;
@@ -244,11 +276,12 @@ namespace rsx
 			compiled_resource& get_compiled() override;
 
 			virtual u16 get_scroll_offset_px() = 0;
-			void add_spacer();
+			void add_spacer(u16 size = 0);
 		};
 
 		struct vertical_layout : public layout_container
 		{
+			using layout_container::add_element;
 			overlay_element* add_element(std::unique_ptr<overlay_element>& item, int offset = -1) override;
 			compiled_resource& get_compiled() override;
 			u16 get_scroll_offset_px() override;
@@ -256,9 +289,17 @@ namespace rsx
 
 		struct horizontal_layout : public layout_container
 		{
+			using layout_container::add_element;
 			overlay_element* add_element(std::unique_ptr<overlay_element>& item, int offset = -1) override;
 			compiled_resource& get_compiled() override;
 			u16 get_scroll_offset_px() override;
+		};
+
+		struct box_layout : public layout_container
+		{
+			using layout_container::add_element;
+			overlay_element* add_element(std::unique_ptr<overlay_element>& item, int offset = -1) override;
+			u16 get_scroll_offset_px() override { return 0; }
 		};
 
 		// Controls
@@ -286,7 +327,7 @@ namespace rsx
 		{
 		protected:
 			u8 image_resource_ref = image_resource_id::none;
-			void* external_ref = nullptr;
+			const void* external_ref = nullptr;
 
 			// Strength of blur effect
 			u8 blur_strength = 0;
@@ -297,7 +338,7 @@ namespace rsx
 			compiled_resource& get_compiled() override;
 
 			void set_image_resource(u8 resource_id);
-			void set_raw_image(image_info_base* raw_image);
+			void set_raw_image(const image_info_base* raw_image);
 			void clear_image();
 			void set_blur_strength(u8 strength);
 		};
@@ -320,7 +361,7 @@ namespace rsx
 		struct label : public overlay_element
 		{
 			label() = default;
-			label(const std::string& text);
+			label(std::string_view text);
 
 			bool auto_resize(bool grow_only = false, u16 limit_w = -1, u16 limit_h = -1);
 		};

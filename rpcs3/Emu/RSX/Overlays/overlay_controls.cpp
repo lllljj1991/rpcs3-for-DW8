@@ -108,6 +108,89 @@ namespace rsx
 		{
 		}
 
+		std::unique_ptr<image_info> resource_config::load_icon(std::string_view relative_path)
+		{
+			const std::string res = relative_path.data();
+
+			// First check the global config dir
+			const std::string image_path = fs::get_config_dir() + "Icons/ui/" + res;
+			auto info = std::make_unique<image_info>(image_path);
+
+#if !defined(_WIN32) && !defined(__APPLE__) && defined(DATADIR)
+			// Check the DATADIR if defined
+			if (info->get_data() == nullptr)
+			{
+				const std::string data_dir (DATADIR);
+				const std::string image_data = data_dir + "/Icons/ui/" + res;
+				info = std::make_unique<image_info>(image_data);
+			}
+#endif
+
+			if (info->get_data() == nullptr)
+			{
+				// Resource was not found in the DATADIR or config dir, try and grab from relative path (linux)
+				std::string src = "Icons/ui/" + res;
+				info = std::make_unique<image_info>(src);
+#ifndef _WIN32
+				// Check for Icons in ../share/rpcs3 for AppImages,
+				// in rpcs3.app/Contents/Resources for App Bundles, and /usr/bin.
+				if (info->get_data() == nullptr)
+				{
+					char result[ PATH_MAX ];
+#if defined(__APPLE__)
+					u32 bufsize = PATH_MAX;
+					const bool success = _NSGetExecutablePath( result, &bufsize ) == 0;
+#elif defined(KERN_PROC_PATHNAME)
+					usz bufsize = PATH_MAX;
+					int mib[] = {
+						CTL_KERN,
+#if defined(__NetBSD__)
+						KERN_PROC_ARGS,
+						-1,
+						KERN_PROC_PATHNAME,
+#else
+						KERN_PROC,
+						KERN_PROC_PATHNAME,
+						-1,
+#endif
+					};
+					const bool success = sysctl(mib, sizeof(mib)/sizeof(mib[0]), result, &bufsize, NULL, 0) >= 0;
+#elif defined(__linux__)
+					const bool success = readlink( "/proc/self/exe", result, PATH_MAX ) >= 0;
+#elif defined(__sun)
+					const bool success = readlink( "/proc/self/path/a.out", result, PATH_MAX ) >= 0;
+#else
+					const bool success = readlink( "/proc/curproc/file", result, PATH_MAX ) >= 0;
+#endif
+					if (success)
+					{
+						std::string executablePath = dirname(result);
+#ifdef __APPLE__
+						src = executablePath + "/../Resources/Icons/ui/" + res;
+#else
+						src = executablePath + "/../share/rpcs3/Icons/ui/" + res;
+#endif
+						info = std::make_unique<image_info>(src);
+						// Check if the icons are in the same directory as the executable (local builds)
+						if (info->get_data() == nullptr)
+						{
+							src = executablePath + "/Icons/ui/" + res;
+							info = std::make_unique<image_info>(src);
+						}
+					}
+				}
+#endif
+				if (info->get_data())
+				{
+					// Install the image to config dir
+					fs::create_path(fs::get_parent_dir(image_path));
+					fs::copy_file(src, image_path, true);
+				}
+			}
+
+			return info;
+		}
+
 		void resource_config::load_files()
 		{
 			const std::array<std::string, 15> texture_resource_files
@@ -130,82 +213,7 @@ namespace rsx
 			};
 			for (const std::string& res : texture_resource_files)
 			{
-				// First check the global config dir
-				const std::string image_path = fs::get_config_dir() + "Icons/ui/" + res;
-				auto info = std::make_unique<image_info>(image_path);
-
-#if !defined(_WIN32) && !defined(__APPLE__) && defined(DATADIR)
-				// Check the DATADIR if defined
-				if (info->get_data() == nullptr)
-				{
-					const std::string data_dir (DATADIR);
-					const std::string image_data = data_dir + "/Icons/ui/" + res;
-					info = std::make_unique<image_info>(image_data);
-				}
-#endif
-
-				if (info->get_data() == nullptr)
-				{
-					// Resource was not found in the DATADIR or config dir, try and grab from relative path (linux)
-					std::string src = "Icons/ui/" + res;
-					info = std::make_unique<image_info>(src);
-#ifndef _WIN32
-					// Check for Icons in ../share/rpcs3 for AppImages,
-					// in rpcs3.app/Contents/Resources for App Bundles, and /usr/bin.
-					if (info->get_data() == nullptr)
-					{
-						char result[ PATH_MAX ];
-#if defined(__APPLE__)
-						u32 bufsize = PATH_MAX;
-						const bool success = _NSGetExecutablePath( result, &bufsize ) == 0;
-#elif defined(KERN_PROC_PATHNAME)
-						usz bufsize = PATH_MAX;
-						int mib[] = {
-							CTL_KERN,
-#if defined(__NetBSD__)
-							KERN_PROC_ARGS,
-							-1,
-							KERN_PROC_PATHNAME,
-#else
-							KERN_PROC,
-							KERN_PROC_PATHNAME,
-							-1,
-#endif
-						};
-						const bool success = sysctl(mib, sizeof(mib)/sizeof(mib[0]), result, &bufsize, NULL, 0) >= 0;
-#elif defined(__linux__)
-						const bool success = readlink( "/proc/self/exe", result, PATH_MAX ) >= 0;
-#elif defined(__sun)
-						const bool success = readlink( "/proc/self/path/a.out", result, PATH_MAX ) >= 0;
-#else
-						const bool success = readlink( "/proc/curproc/file", result, PATH_MAX ) >= 0;
-#endif
-						if (success)
-						{
-							std::string executablePath = dirname(result);
-#ifdef __APPLE__
-							src = executablePath + "/../Resources/Icons/ui/" + res;
-#else
-							src = executablePath + "/../share/rpcs3/Icons/ui/" + res;
-#endif
-							info = std::make_unique<image_info>(src);
-							// Check if the icons are in the same directory as the executable (local builds)
-							if (info->get_data() == nullptr)
-							{
-								src = executablePath + "/Icons/ui/" + res;
-								info = std::make_unique<image_info>(src);
-							}
-						}
-					}
-#endif
-					if (info->get_data())
-					{
-						// Install the image to config dir
-						fs::create_path(fs::get_parent_dir(image_path));
-						fs::copy_file(src, image_path, true);
-					}
-				}
-
+				auto info = load_icon(res);
 				texture_raw_data.push_back(std::move(info));
 			}
 		}
@@ -579,43 +587,49 @@ namespace rsx
 
 		compiled_resource& overlay_element::get_compiled()
 		{
-			if (!is_compiled())
+			if (is_compiled())
 			{
-				compiled_resources.clear();
+				return compiled_resources;
+			}
 
-				compiled_resource compiled_resources_temp = {};
-				auto& cmd_bg = compiled_resources_temp.append({});
-				auto& config = cmd_bg.config;
+			m_is_compiled = true;
+			compiled_resources.clear();
 
-				config.color = back_color;
-				config.pulse_glow = pulse_effect_enabled;
-				config.pulse_sinus_offset = pulse_sinus_offset;
-				config.pulse_speed_modifier = pulse_speed_modifier;
+			if (!is_visible())
+			{
+				return compiled_resources;
+			}
 
-				auto& verts = compiled_resources_temp.draw_commands.front().verts;
-				verts.resize(4);
+			compiled_resource compiled_resources_temp = {};
+			auto& cmd_bg = compiled_resources_temp.append({});
+			auto& config = cmd_bg.config;
 
-				verts[0].vec4(x, y, 0.f, 0.f);
-				verts[1].vec4(f32(x + w), y, 1.f, 0.f);
-				verts[2].vec4(x, f32(y + h), 0.f, 1.f);
-				verts[3].vec4(f32(x + w), f32(y + h), 1.f, 1.f);
+			config.color = back_color;
+			config.pulse_glow = pulse_effect_enabled;
+			config.pulse_sinus_offset = pulse_sinus_offset;
+			config.pulse_speed_modifier = pulse_speed_modifier;
 
-				compiled_resources.add(std::move(compiled_resources_temp), margin_left, margin_top);
+			auto& verts = compiled_resources_temp.draw_commands.front().verts;
+			verts.resize(4);
 
-				if (!text.empty())
-				{
-					compiled_resources_temp.clear();
-					auto& cmd_text = compiled_resources_temp.append({});
+			verts[0].vec4(x, y, 0.f, 0.f);
+			verts[1].vec4(f32(x + w), y, 1.f, 0.f);
+			verts[2].vec4(x, f32(y + h), 0.f, 1.f);
+			verts[3].vec4(f32(x + w), f32(y + h), 1.f, 1.f);
 
-					cmd_text.config.set_font(get_font());
-					cmd_text.config.color = fore_color;
-					cmd_text.verts = render_text(text.c_str(), static_cast<f32>(x), static_cast<f32>(y));
+			compiled_resources.add(std::move(compiled_resources_temp), margin_left, margin_top);
 
-					if (!cmd_text.verts.empty())
-						compiled_resources.add(std::move(compiled_resources_temp), margin_left - horizontal_scroll_offset, margin_top - vertical_scroll_offset);
-				}
+			if (!text.empty())
+			{
+				compiled_resources_temp.clear();
+				auto& cmd_text = compiled_resources_temp.append({});
 
-				m_is_compiled = true;
+				cmd_text.config.set_font(get_font());
+				cmd_text.config.color = fore_color;
+				cmd_text.verts = render_text(text.c_str(), static_cast<f32>(x), static_cast<f32>(y));
+
+				if (!cmd_text.verts.empty())
+					compiled_resources.add(std::move(compiled_resources_temp), margin_left - horizontal_scroll_offset, margin_top - vertical_scroll_offset);
 			}
 
 			return compiled_resources;
@@ -670,6 +684,20 @@ namespace rsx
 			width = static_cast<u16>(ceilf(max_w));
 		}
 
+		u16 overlay_element::compute_vertically_centered(u16 element_height)
+		{
+			const u16 half_height = h / 2;
+			const u16 element_half_height = element_height / 2;
+			return std::max(half_height, element_half_height) - element_half_height;
+		}
+
+		u16 overlay_element::compute_horizontally_centered(u16 element_width)
+		{
+			const u16 half_width = h / 2;
+			const u16 element_half_width = element_width / 2;
+			return std::max(half_width, element_half_width) - element_half_width;
+		}
+
 		layout_container::layout_container()
 		{
 			// Transparent by default
@@ -716,10 +744,18 @@ namespace rsx
 			return compiled_resources;
 		}
 
-		void layout_container::add_spacer()
+		void layout_container::add_spacer(u16 size)
 		{
 			std::unique_ptr<overlay_element> spacer_element = std::make_unique<spacer>();
+			spacer_element->set_size(size, size);
 			add_element(spacer_element);
+		}
+
+		void layout_container::clear_items()
+		{
+			m_items.clear();
+			advance_pos = 0;
+			scroll_offset_value = 0;
 		}
 
 		overlay_element* vertical_layout::add_element(std::unique_ptr<overlay_element>& item, int offset)
@@ -847,8 +883,8 @@ namespace rsx
 						continue;
 					}
 
-					const s32 item_x_limit = s32{item->x} + item->w - scroll_offset_value - w;
-					const s32 item_x_base = s32{item->x} - scroll_offset_value - w;
+					const s32 item_x_limit = s32{item->x} + item->w - scroll_offset_value - x;
+					const s32 item_x_base = s32{item->x} - scroll_offset_value - x;
 
 					if (item_x_base > w)
 					{
@@ -886,29 +922,51 @@ namespace rsx
 			return scroll_offset_value;
 		}
 
-		compiled_resource& image_view::get_compiled()
+		overlay_element* box_layout::add_element(std::unique_ptr<overlay_element>& item, int offset)
 		{
-			if (!is_compiled())
+			if (offset < 0)
 			{
-				auto& result  = overlay_element::get_compiled();
-				auto& cmd_img = result.draw_commands.front();
-
-				cmd_img.config.set_image_resource(image_resource_ref);
-				cmd_img.config.color = fore_color;
-				cmd_img.config.external_data_ref = external_ref;
-				cmd_img.config.blur_strength = blur_strength;
-
-				// Make padding work for images (treat them as the content instead of the 'background')
-				auto& verts = cmd_img.verts;
-
-				verts[0] += vertex(padding_left, padding_bottom, 0, 0);
-				verts[1] += vertex(-padding_right, padding_bottom, 0, 0);
-				verts[2] += vertex(padding_left, -padding_top, 0, 0);
-				verts[3] += vertex(-padding_right, -padding_top, 0, 0);
-
-				m_is_compiled = true;
+				m_items.push_back(std::move(item));
+				return m_items.back().get();
 			}
 
+			overlay_element* result = item.get();
+			m_items.insert(m_items.begin() + offset, std::move(item));
+			return result;
+		}
+
+		compiled_resource& image_view::get_compiled()
+		{
+			if (is_compiled())
+			{
+				return compiled_resources;
+			}
+
+			compiled_resources.clear();
+
+			if (!is_visible())
+			{
+				m_is_compiled = true;
+				return compiled_resources;
+			}
+
+			auto& result  = overlay_element::get_compiled();
+			auto& cmd_img = result.draw_commands.front();
+
+			cmd_img.config.set_image_resource(image_resource_ref);
+			cmd_img.config.color = fore_color;
+			cmd_img.config.external_data_ref = external_ref;
+			cmd_img.config.blur_strength = blur_strength;
+
+			// Make padding work for images (treat them as the content instead of the 'background')
+			auto& verts = cmd_img.verts;
+
+			verts[0] += vertex(padding_left, padding_top, 0, 0);
+			verts[1] += vertex(-padding_right, padding_top, 0, 0);
+			verts[2] += vertex(padding_left, -padding_bottom, 0, 0);
+			verts[3] += vertex(-padding_right, -padding_bottom, 0, 0);
+
+			m_is_compiled = true;
 			return compiled_resources;
 		}
 
@@ -918,7 +976,7 @@ namespace rsx
 			external_ref = nullptr;
 		}
 
-		void image_view::set_raw_image(image_info_base* raw_image)
+		void image_view::set_raw_image(const image_info_base* raw_image)
 		{
 			image_resource_ref = image_resource_id::raw_image;
 			external_ref = raw_image;
@@ -961,29 +1019,40 @@ namespace rsx
 
 		compiled_resource& image_button::get_compiled()
 		{
-			if (!is_compiled())
+			if (is_compiled())
 			{
-				auto& compiled = image_view::get_compiled();
-				for (auto& cmd : compiled.draw_commands)
+				return compiled_resources;
+			}
+
+			compiled_resources.clear();
+
+			if (!is_visible())
+			{
+				m_is_compiled = true;
+				return compiled_resources;
+			}
+
+			auto& compiled = image_view::get_compiled();
+			for (auto& cmd : compiled.draw_commands)
+			{
+				if (cmd.config.texture_ref == image_resource_id::font_file)
 				{
-					if (cmd.config.texture_ref == image_resource_id::font_file)
+					// Text, translate geometry to the right
+					for (auto &v : cmd.verts)
 					{
-						// Text, translate geometry to the right
-						for (auto &v : cmd.verts)
-						{
-							v.values[0] += m_text_offset_x;
-							v.values[1] += m_text_offset_y;
-						}
+						v.values[0] += m_text_offset_x;
+						v.values[1] += m_text_offset_y;
 					}
 				}
 			}
 
+			m_is_compiled = true;
 			return compiled_resources;
 		}
 
-		label::label(const std::string& text)
+		label::label(std::string_view text)
 		{
-			set_text(text);
+			set_text(text.data());
 		}
 
 		bool label::auto_resize(bool grow_only, u16 limit_w, u16 limit_h)
@@ -1013,90 +1082,97 @@ namespace rsx
 
 		compiled_resource& rounded_rect::get_compiled()
 		{
-			if (!is_compiled())
+			if (is_compiled())
 			{
-				compiled_resources.clear();
-
-#ifdef __APPLE__
-				if (true)
-#else
-				if (radius == 0 || radius > (w / 2))
-#endif
-				{
-					// Invalid radius
-					compiled_resources = overlay_element::get_compiled();
-				}
-				else
-				{
-					compiled_resource compiled_resources_temp = {};
-					compiled_resources_temp.append({}); // Bg horizontal mid
-					compiled_resources_temp.append({}); // Bg horizontal top
-					compiled_resources_temp.append({}); // Bg horizontal bottom
-					compiled_resources_temp.append({}); // Bg upper-left
-					compiled_resources_temp.append({}); // Bg lower-left
-					compiled_resources_temp.append({}); // Bg upper-right
-					compiled_resources_temp.append({}); // Bg lower-right
-
-					for (auto& draw_cmd : compiled_resources_temp.draw_commands)
-					{
-						auto& config = draw_cmd.config;
-						config.color = back_color;
-						config.disable_vertex_snap = true;
-						config.pulse_glow = pulse_effect_enabled;
-						config.pulse_sinus_offset = pulse_sinus_offset;
-						config.pulse_speed_modifier = pulse_speed_modifier;
-					}
-
-					auto& bg0 = compiled_resources_temp.draw_commands[0];
-					auto& bg1 = compiled_resources_temp.draw_commands[1];
-					auto& bg2 = compiled_resources_temp.draw_commands[2];
-
-					bg0.verts.emplace_back(f32(x), f32(y + radius), 0.f, 0.f);
-					bg0.verts.emplace_back(f32(x + w), f32(y + radius), 0.f, 0.f);
-					bg0.verts.emplace_back(f32(x), f32(y + h) - radius, 0.f, 0.f);
-					bg0.verts.emplace_back(f32(x + w), f32(y + h) - radius, 0.f, 0.f);
-
-					bg1.verts.emplace_back(f32(x + radius), f32(y), 0.f, 0.f);
-					bg1.verts.emplace_back(f32(x + w) - radius, f32(y), 0.f, 0.f);
-					bg1.verts.emplace_back(f32(x + radius), f32(y + radius), 0.f, 0.f);
-					bg1.verts.emplace_back(f32(x + w) - radius, f32(y + radius), 0.f, 0.f);
-
-					bg2.verts.emplace_back(f32(x + radius), f32(y + h) - radius, 0.f, 0.f);
-					bg2.verts.emplace_back(f32(x + w) - radius, f32(y + h) - radius, 0.f, 0.f);
-					bg2.verts.emplace_back(f32(x + radius), f32(y + h), 0.f, 0.f);
-					bg2.verts.emplace_back(f32(x + w) - radius, f32(y + h), 0.f, 0.f);
-
-					// Generate the quadrants
-					const f32 corners[4][2] =
-					{
-						{ f32(x + radius), f32(y + radius) },
-						{ f32(x + radius), f32(y + h) - radius },
-						{ f32(x + w) - radius, f32(y + radius) },
-						{ f32(x + w) - radius, f32(y + h) - radius }
-					};
-
-					const f32 radius_f = static_cast<f32>(radius);
-					const f32 scale[4][2] =
-					{
-						{ -radius_f, -radius_f },
-						{ -radius_f, +radius_f },
-						{ +radius_f, -radius_f },
-						{ +radius_f, +radius_f }
-					};
-
-					for (int i = 0; i < 4; ++i)
-					{
-						auto& command = compiled_resources_temp.draw_commands[i + 3];
-						command.config.primitives = rsx::overlays::primitive_type::triangle_fan;
-						command.verts = generate_unit_quadrant(num_control_points, corners[i], scale[i]);
-					}
-
-					compiled_resources.add(std::move(compiled_resources_temp), margin_left, margin_top);
-				}
-
-				m_is_compiled = true;
+				return compiled_resources;
 			}
 
+			compiled_resources.clear();
+
+			if (!is_visible())
+			{
+				m_is_compiled = true;
+				return compiled_resources;
+			}
+
+#ifdef __APPLE__
+			if (true)
+#else
+			if (radius == 0 || radius > (w / 2))
+#endif
+			{
+				// Invalid radius
+				compiled_resources = overlay_element::get_compiled();
+				m_is_compiled = true;
+				return compiled_resources;
+			}
+
+			compiled_resource compiled_resources_temp = {};
+			compiled_resources_temp.append({}); // Bg horizontal mid
+			compiled_resources_temp.append({}); // Bg horizontal top
+			compiled_resources_temp.append({}); // Bg horizontal bottom
+			compiled_resources_temp.append({}); // Bg upper-left
+			compiled_resources_temp.append({}); // Bg lower-left
+			compiled_resources_temp.append({}); // Bg upper-right
+			compiled_resources_temp.append({}); // Bg lower-right
+
+			for (auto& draw_cmd : compiled_resources_temp.draw_commands)
+			{
+				auto& config = draw_cmd.config;
+				config.color = back_color;
+				config.disable_vertex_snap = true;
+				config.pulse_glow = pulse_effect_enabled;
+				config.pulse_sinus_offset = pulse_sinus_offset;
+				config.pulse_speed_modifier = pulse_speed_modifier;
+			}
+
+			auto& bg0 = compiled_resources_temp.draw_commands[0];
+			auto& bg1 = compiled_resources_temp.draw_commands[1];
+			auto& bg2 = compiled_resources_temp.draw_commands[2];
+
+			bg0.verts.emplace_back(f32(x), f32(y + radius), 0.f, 0.f);
+			bg0.verts.emplace_back(f32(x + w), f32(y + radius), 0.f, 0.f);
+			bg0.verts.emplace_back(f32(x), f32(y + h) - radius, 0.f, 0.f);
+			bg0.verts.emplace_back(f32(x + w), f32(y + h) - radius, 0.f, 0.f);
+
+			bg1.verts.emplace_back(f32(x + radius), f32(y), 0.f, 0.f);
+			bg1.verts.emplace_back(f32(x + w) - radius, f32(y), 0.f, 0.f);
+			bg1.verts.emplace_back(f32(x + radius), f32(y + radius), 0.f, 0.f);
+			bg1.verts.emplace_back(f32(x + w) - radius, f32(y + radius), 0.f, 0.f);
+
+			bg2.verts.emplace_back(f32(x + radius), f32(y + h) - radius, 0.f, 0.f);
+			bg2.verts.emplace_back(f32(x + w) - radius, f32(y + h) - radius, 0.f, 0.f);
+			bg2.verts.emplace_back(f32(x + radius), f32(y + h), 0.f, 0.f);
+			bg2.verts.emplace_back(f32(x + w) - radius, f32(y + h), 0.f, 0.f);
+
+			// Generate the quadrants
+			const f32 corners[4][2] =
+			{
+				{ f32(x + radius), f32(y + radius) },
+				{ f32(x + radius), f32(y + h) - radius },
+				{ f32(x + w) - radius, f32(y + radius) },
+				{ f32(x + w) - radius, f32(y + h) - radius }
+			};
+
+			const f32 radius_f = static_cast<f32>(radius);
+			const f32 scale[4][2] =
+			{
+				{ -radius_f, -radius_f },
+				{ -radius_f, +radius_f },
+				{ +radius_f, -radius_f },
+				{ +radius_f, +radius_f }
+			};
+
+			for (int i = 0; i < 4; ++i)
+			{
+				auto& command = compiled_resources_temp.draw_commands[i + 3];
+				command.config.primitives = rsx::overlays::primitive_type::triangle_fan;
+				command.verts = generate_unit_quadrant(num_control_points, corners[i], scale[i]);
+			}
+
+			compiled_resources.add(std::move(compiled_resources_temp), margin_left, margin_top);
+
+			m_is_compiled = true;
 			return compiled_resources;
 		}
 	}

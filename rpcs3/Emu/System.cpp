@@ -166,6 +166,8 @@ void fmt_class_string<cfg_mode>::format(std::string& out, u64 arg)
 
 void Emulator::CallFromMainThread(std::function<void()>&& func, atomic_t<u32>* wake_up, bool track_emu_state, u64 stop_ctr, std::source_location src_loc) const
 {
+	ensure(func);
+
 	std::function<void()> final_func = [this, before = IsStopped(true), track_emu_state, thread_name = thread_ctrl::get_name(), src = src_loc
 		, count = (stop_ctr == umax ? +m_stop_ctr : stop_ctr), func = std::move(func)]
 	{
@@ -179,7 +181,7 @@ void Emulator::CallFromMainThread(std::function<void()>&& func, atomic_t<u32>* w
 		}
 	};
 
-	m_cb.call_from_main_thread(std::move(final_func), wake_up);
+	ensure(m_cb.call_from_main_thread)(std::move(final_func), wake_up);
 }
 
 void Emulator::BlockingCallFromMainThread(std::function<void()>&& func, bool track_emu_state, std::source_location src_loc) const
@@ -1329,18 +1331,18 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				argv.emplace_back(m_path);
 			}
 
-			resolve_path_as_vfs_path =  true;
+			resolve_path_as_vfs_path = true;
 		}
 		else if (m_path.starts_with(game_id_boot_prefix))
 		{
 			// Try to boot a game through game ID only
-			m_title_id = m_path.substr(game_id_boot_prefix.size());
-			m_title_id = m_title_id.substr(0, m_title_id.find_first_of(fs::delim));
+			const std::string_view boot_suffix = std::string_view(m_path).substr(game_id_boot_prefix.size());
+			m_title_id = boot_suffix.substr(0, boot_suffix.find_first_of(fs::delim));
 
 			if (m_title_id.size() < 3 && m_title_id.find_first_not_of('.') == umax)
 			{
 				// Do not allow if TITLE_ID result in path redirection
-				sys_log.fatal("Game directory not found using GAMEID token. ('%s')", m_title_id);
+				sys_log.fatal("Game directory not found using GAMEID token. (m_path='%s', title_id='%s')", m_title_id);
 				return game_boot_result::invalid_file_or_folder;
 			}
 
@@ -1361,19 +1363,27 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				title_path = std::move(game_path);
 			}
 
-			for (std::string test_path :
+			if (is_file_iso(title_path))
 			{
-				rpcs3::utils::get_hdd0_dir() + "game/" + m_title_id + "/USRDIR/EBOOT.BIN"
-				, tail.empty() ? "" : title_path + tail + "/USRDIR/EBOOT.BIN"
-				, title_path + "/PS3_GAME/USRDIR/EBOOT.BIN"
-				, title_path + "/USRDIR/EBOOT.BIN"
-			})
+				m_path = std::move(title_path);
+				ok = true;
+			}
+			else
 			{
-				if (!test_path.empty() && fs::is_file(test_path))
+				for (std::string test_path :
 				{
-					m_path = std::move(test_path);
-					ok = true;
-					break;
+					rpcs3::utils::get_hdd0_dir() + "game/" + m_title_id + "/USRDIR/EBOOT.BIN"
+					, tail.empty() ? "" : title_path + tail + "/USRDIR/EBOOT.BIN"
+					, title_path + "/PS3_GAME/USRDIR/EBOOT.BIN"
+					, title_path + "/USRDIR/EBOOT.BIN"
+				})
+				{
+					if (!test_path.empty() && fs::is_file(test_path))
+					{
+						m_path = std::move(test_path);
+						ok = true;
+						break;
+					}
 				}
 			}
 

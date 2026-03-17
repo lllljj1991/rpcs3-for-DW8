@@ -6,6 +6,7 @@ namespace gui::utils
 	{
 		desktop,
 		applications,
+		steam,
 #ifdef _WIN32
 		rpcs3_shortcuts,
 #endif
@@ -18,6 +19,7 @@ namespace gui::utils
 	                     const std::string& description,
 	                     const std::string& src_icon_path,
 	                     const std::string& target_icon_dir,
+	                     const std::string& src_banner_path,
 	                     shortcut_location shortcut_location);
 
 	void remove_shortcuts(const std::string& name, const std::string& serial);

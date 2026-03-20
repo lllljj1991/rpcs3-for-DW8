@@ -138,8 +138,7 @@ void GLGSRender::on_init_thread()
 	gl::init();
 	gl::set_command_context(gl_state);
 
-	// Enable adaptive vsync if vsync is requested
-	gl::set_swapinterval(g_cfg.video.vsync ? -1 : 0);
+	update_swap_interval();
 
 	if (g_cfg.video.debug_output)
 		gl::enable_debugging();
@@ -578,6 +577,33 @@ void GLGSRender::on_exit()
 	zcull_ctrl.release();
 
 	gl::set_primary_context_thread(false);
+}
+
+void GLGSRender::update_swap_interval()
+{
+	const vsync_mode current_mode = g_cfg.video.vsync;
+	if (current_mode == m_vsync_mode)
+	{
+		return;
+	}
+
+	// Enable adaptive vsync if vsync is requested
+	int swap_interval = 0;
+	switch (current_mode)
+	{
+	default:
+	case vsync_mode::off:
+		break;
+	case vsync_mode::adaptive:
+		swap_interval = -1;
+		break;
+	case vsync_mode::full:
+		swap_interval = 1;
+		break;
+	}
+
+	gl::set_swapinterval(swap_interval);
+	m_vsync_mode = current_mode;
 }
 
 void GLGSRender::clear_surface(u32 arg)

@@ -162,7 +162,7 @@ void ds4_pad_handler::init_config(cfg_pad* cfg)
 	cfg->rs_up.def    = ::at32(button_list, DS4KeyCodes::RSYPos);
 	cfg->start.def    = ::at32(button_list, DS4KeyCodes::Options);
 	cfg->select.def   = ::at32(button_list, DS4KeyCodes::Share);
-	cfg->ps.def       = ::at32(button_list, DS4KeyCodes::PSButton);
+	cfg->ps.def       = cfg_pad::make_button_string(button_list, {{DS4KeyCodes::PSButton}, {DS4KeyCodes::Options, DS4KeyCodes::Share}});
 	cfg->square.def   = ::at32(button_list, DS4KeyCodes::Square);
 	cfg->cross.def    = ::at32(button_list, DS4KeyCodes::Cross);
 	cfg->circle.def   = ::at32(button_list, DS4KeyCodes::Circle);
@@ -410,7 +410,7 @@ std::unordered_map<u32, u16> ds4_pad_handler::get_button_values(const std::share
 	return keyBuffer;
 }
 
-pad_preview_values ds4_pad_handler::get_preview_values(const std::unordered_map<u32, u16>& data)
+pad_preview_values ds4_pad_handler::get_preview_values(const std::unordered_map<u32, u16>& data, const std::vector<std::string>& /*buttons*/)
 {
 	return {
 		::at32(data, L2),

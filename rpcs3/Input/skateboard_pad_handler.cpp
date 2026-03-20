@@ -112,7 +112,7 @@ void skateboard_pad_handler::init_config(cfg_pad* cfg)
 	cfg->rs_up.def    = ::at32(button_list, skateboard_key_codes::none);
 	cfg->start.def    = ::at32(button_list, skateboard_key_codes::start);
 	cfg->select.def   = ::at32(button_list, skateboard_key_codes::select);
-	cfg->ps.def       = ::at32(button_list, skateboard_key_codes::ps);
+	cfg->ps.def       = cfg_pad::make_button_string(button_list, {{skateboard_key_codes::ps}, {skateboard_key_codes::start, skateboard_key_codes::select}});
 	cfg->square.def   = ::at32(button_list, skateboard_key_codes::square);
 	cfg->cross.def    = ::at32(button_list, skateboard_key_codes::cross);
 	cfg->circle.def   = ::at32(button_list, skateboard_key_codes::circle);
@@ -328,7 +328,7 @@ void skateboard_pad_handler::get_extended_info(const pad_ensemble& binding)
 	set_raw_orientation(*pad);
 }
 
-pad_preview_values skateboard_pad_handler::get_preview_values(const std::unordered_map<u32, u16>& /*data*/)
+pad_preview_values skateboard_pad_handler::get_preview_values(const std::unordered_map<u32, u16>& /*data*/, const std::vector<std::string>& /*buttons*/)
 {
 	// There is no proper user interface for skateboard values yet
 	return {};

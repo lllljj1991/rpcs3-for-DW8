@@ -152,7 +152,7 @@ void ps_move_handler::init_config(cfg_pad* cfg)
 	cfg->rs_up.def    = ::at32(button_list, ps_move_key_codes::none);
 	cfg->start.def    = ::at32(button_list, ps_move_key_codes::start);
 	cfg->select.def   = ::at32(button_list, ps_move_key_codes::select);
-	cfg->ps.def       = ::at32(button_list, ps_move_key_codes::ps);
+	cfg->ps.def       = cfg_pad::make_button_string(button_list, {{ps_move_key_codes::ps}, {ps_move_key_codes::start, ps_move_key_codes::select}});
 	cfg->square.def   = ::at32(button_list, ps_move_key_codes::square);
 	cfg->cross.def    = ::at32(button_list, ps_move_key_codes::cross);
 	cfg->circle.def   = ::at32(button_list, ps_move_key_codes::circle);
@@ -760,7 +760,7 @@ void ps_move_handler::get_extended_info(const pad_ensemble& binding)
 	handle_external_device(binding);
 }
 
-pad_preview_values ps_move_handler::get_preview_values(const std::unordered_map<u32, u16>& data)
+pad_preview_values ps_move_handler::get_preview_values(const std::unordered_map<u32, u16>& data, const std::vector<std::string>& /*buttons*/)
 {
 	return {
 		std::max(::at32(data, ps_move_key_codes::L2), ::at32(data, ps_move_key_codes::t)),

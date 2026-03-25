@@ -38,6 +38,7 @@ private:
 	{
 		switch (id)
 		{
+		case localized_string_id::RSX_OVERLAYS_SPINNER_NO_TEXT: return "";
 		case localized_string_id::RSX_OVERLAYS_TROPHY_BRONZE: return tr("You have earned a bronze trophy.\n%0", "Trophy text").arg(std::forward<Args>(args)...);
 		case localized_string_id::RSX_OVERLAYS_TROPHY_SILVER: return tr("You have earned a silver trophy.\n%0", "Trophy text").arg(std::forward<Args>(args)...);
 		case localized_string_id::RSX_OVERLAYS_TROPHY_GOLD: return tr("You have earned a gold trophy.\n%0", "Trophy text").arg(std::forward<Args>(args)...);
@@ -180,6 +181,8 @@ private:
 		case localized_string_id::CELL_NP_SENDMESSAGE_DIALOG_CONFIRMATION: return tr("Send message to %0 ?\n\nSubject:", "SENDMESSAGE_DIALOG").arg(std::forward<Args>(args)...);
 		case localized_string_id::CELL_NP_SENDMESSAGE_DIALOG_CONFIRMATION_INVITE: return tr("Send invite to %0 ?\n\nSubject:", "SENDMESSAGE_DIALOG").arg(std::forward<Args>(args)...);
 		case localized_string_id::CELL_NP_SENDMESSAGE_DIALOG_CONFIRMATION_ADD_FRIEND: return tr("Send friend request to %0 ?\n\nSubject:", "SENDMESSAGE_DIALOG").arg(std::forward<Args>(args)...);
+		case localized_string_id::CELL_NP_MESSAGE_INVITE_RECEIVED: return tr("Received an invite from %0").arg(std::forward<Args>(args)...);
+		case localized_string_id::CELL_NP_MESSAGE_OTHER_RECEIVED: return tr("Received a message from %0").arg(std::forward<Args>(args)...);
 		case localized_string_id::RECORDING_ABORTED: return tr("Recording aborted!");
 		case localized_string_id::RPCN_NO_ERROR: return tr("RPCN: No Error");
 		case localized_string_id::RPCN_ERROR_INVALID_INPUT: return tr("RPCN: Invalid Input (Wrong Host/Port)");
@@ -255,6 +258,7 @@ private:
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_MAX_CPU_PREEMPTIONS: return tr("Max Power Saving CPU-Preemptions", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_ACCURATE_RSX_RESERVATION_ACCESS: return tr("Accurate RSX reservation access", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_SLEEP_TIMERS_ACCURACY: return tr("Sleep Timers Accuracy", "Advanced");
+		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_RSX_MEMORY_TILING: return tr("Handle RSX Memory Tiling", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_MAX_SPURS_THREADS: return tr("Max SPURS Threads", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_DRIVER_WAKE_UP_DELAY: return tr("Driver Wake-Up Delay", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_VBLANK_FREQUENCY: return tr("VBlank Frequency", "Advanced");

@@ -28,8 +28,8 @@ public:
 		const QString debug_console_mode           = tr("Increases the amount of usable system memory to match a DECR console and more.\nCauses some software to behave differently than on retail hardware.");
 		const QString accurate_rsx_access          = tr("Forces RSX pauses on SPU MFC_GETLLAR and SPU MFC_PUTLLUC operations.");
 		const QString accurate_spu_dma             = tr("Accurately processes SPU DMA operations.");
-		const QString fixup_ppunj                  = tr("Legacy option. Fixup result vector values in Non-Java Mode in PPU LLVM.\nIf unsure, do not modify this setting.");
 		const QString accurate_dfma                = tr("Use accurate double-precision FMA instructions in PPU and SPU backends.\nWhile disabling it might give a decent performance boost if your CPU doesn't support FMA, it may also introduce subtle bugs that otherwise do not occur.\nYou shouldn't disable it if your CPU supports FMA.");
+		const QString fixup_ppunj                  = tr("Legacy option. Fixup result vector values in Non-Java Mode in PPU LLVM.\nIf unsure, do not modify this setting.");
 		const QString fixup_ppuvnan                = tr("Fixup NaN results in vector instructions in PPU backends.\nIf unsure, do not modify this setting.");
 		const QString silence_all_logs             = tr("Stop writing any logs after game startup. Don't use unless you believe it's necessary.");
 		const QString read_color                   = tr("Initializes render target memory using vm memory.");
@@ -42,6 +42,7 @@ public:
 		const QString disable_vertex_cache         = tr("Disables the vertex cache.\nMight resolve missing or flickering graphics output.\nMay degrade performance.");
 		const QString disable_async_host_mm        = tr("Force host memory management calls to be inlined instead of handled asynchronously.\nThis can cause severe performance degradation and stuttering in some games.\nThis option is only needed by developers to debug problems with texture cache memory protection.");
 		const QString disable_spin_optimization    = tr("Disable SPU GETLLAR spin optimization.\nThis can cause severe performance degradation and stuttering in many games.\nThis option is only needed for a select number of games.");
+		const QString emulate_depth_compare        = tr("Emulate depth comparison operations where desktop hardware behavior differs from PS3, usually EQUAL comparison modes.\nFixes excessive shadow flickering and Z-fighting in some games.\nThis is most obvious in some games where the Z prepass depth format is different from the rasterization depth format, a scenario that will never work out correctly on compliant desktop hardware.");
 		const QString enable_spu_events_busy_loop  = tr("Enable SPU RdEventStat spin.\nThis increases CPU usage, this setting is beneficial for high-threaded CPUs (12+) with select number of games.");
 		const QString zcull_operation_mode         = tr("Changes ZCULL report synchronization behaviour. Experiment to find the best option for your game. Approximate mode is recommended for most games.\n· Precise is the most accurate to PS3 behaviour. Required for accurate visuals in some titles such as Demon's Souls and The Darkness.\n· Approximate is a much faster way to generate occlusion data which may not always match what the PS3 would generate. Works well with most PS3 games.\n· Relaxed changes the synchronization method completely and can greatly improve performance in some games or completely break others.");
 		const QString max_spurs_threads            = tr("Limits the maximum number of SPURS threads in each thread group.\nMay improve performance in some cases, especially on systems with limited number of hardware threads.\nLimiting the number of threads is likely to cause crashes; it's recommended to keep this at the default value.");
@@ -118,6 +119,7 @@ public:
 		const QString debug_overlay_mouse          = tr("Provides a graphical overlay with mouse input values.\nThis is only shown if the other debug overlays are disabled.\nIf unsure, don't use this option.");
 		const QString log_shader_programs          = tr("Dump game shaders to file. Only useful to developers.\nIf unsure, don't use this option.");
 		const QString disable_occlusion_queries    = tr("Disables running occlusion queries. Minor to moderate performance boost.\nMight introduce issues with broken occlusion e.g missing geometry and extreme pop-in.");
+		const QString fb_aliasing_bias             = tr("Controls how RPCS3 resolves render targets where color and depth alias the same memory. Auto is recommended for most games.\n· Auto is the existing behavior, biased toward depth.\n· Prefer Color keeps the color binding when color-write is enabled and depth-write is not. Fixes missing geometry in some deferred renderers (e.g. Starhawk) at the cost of skipping depth test for that draw.\n· Prefer Depth is the same as Auto for now.");
 		const QString disable_video_output         = tr("Disables all video output and PS3 graphical rendering.\nIts only use case is to evaluate performance on CELL for development.");
 		const QString force_cpu_blit_emulation     = tr("Forces emulation of all blit and image manipulation operations on the CPU.\nRequires 'Write Color Buffers' option to also be enabled in most cases to avoid missing graphics.\nSignificantly degrades performance but is more accurate in some cases.\nThis setting overrides the 'GPU texture scaling' option.");
 		const QString disable_vulkan_mem_allocator = tr("Disables the custom Vulkan memory allocator and reverts to direct calls to VkAllocateMemory/VkFreeMemory.");
@@ -157,6 +159,7 @@ public:
 		const QString show_fatal_error_hints       = tr("Shows fatal error hints using the native overlay.");
 		const QString show_capture_hints           = tr("Shows screenshot and recording hints using the native overlay.");
 		const QString use_native_interface         = tr("Enables use of native HUD within the game window that can interact with game controllers.\nWhen disabled, regular Qt dialogs are used instead.\nCurrently, the on-screen keyboard only supports the English key layout.");
+		const QString use_recursive_scan           = tr("Enables use of recursive scan on subfolders when scanning games from the selected folder.\nWhen disabled, games are scanned only on the selected folder.");
 		const QString record_with_overlays         = tr("Enables recording with overlays.\nThis also affects screenshots.");
 		const QString pause_during_home_menu       = tr("When enabled, opening the home menu will also pause emulation.\nWhile most games pause themselves while the home menu is shown, some do not.\nIn that case it can be helpful to pause the emulation whenever the home menu is open.");
 		const QString play_music_during_boot       = tr("Play music during boot sequence if available.");
@@ -263,6 +266,7 @@ public:
 		const QString dns_swap      = tr("DNS Swap List.\nOnly available in custom configurations.");
 		const QString bind          = tr("Interface IP Address to bind to.\nOnly available in custom configurations.");
 		const QString enable_upnp   = tr("Enable UPNP.\nThis will automatically forward ports bound on 0.0.0.0 if your router has UPNP enabled.");
+		const QString derive_mac_from_psid = tr("Derive the MAC address from the PSID.");
 		const QString psn_country   = tr("Changes the RPCN country.");
 		const QString enable_clans  = tr("Enable connection to the Clans server.\nOnly affects games supporting the Clans feature.");
 

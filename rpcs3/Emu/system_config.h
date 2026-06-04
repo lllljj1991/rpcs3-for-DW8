@@ -66,10 +66,10 @@ struct cfg_root : cfg::node
 		cfg::_int<-64, 64> stub_ppu_traps{ this, "Stub PPU Traps", 0, true }; // Hack, skip PPU traps for rare cases where the trap is continueable (specify relative instructions to skip)
 		cfg::_bool precise_spu_verification{ this, "Precise SPU Verification", false }; // Disables use of xorsum based spu verification if enabled.
 		cfg::_bool ppu_llvm_nj_fixup{ this, "PPU LLVM Java Mode Handling", true }; // Partially respect current Java Mode for alti-vec ops by PPU LLVM
+		cfg::_bool ppu_fix_vnan{ this, "PPU Vector NaN Handling", true }; // Accuracy. Partial.
 		cfg::_bool use_accurate_dfma{ this, "Use Accurate DFMA", true }; // Enable accurate double-precision FMA for CPUs which do not support it natively
 		cfg::_bool ppu_set_sat_bit{ this, "PPU Set Saturation Bit", false }; // Accuracy. If unset, completely disable saturation flag handling.
 		cfg::_bool ppu_use_nj_bit{ this, "PPU Accurate Non-Java Mode", false }; // Accuracy. If set, accurately emulate NJ flag. Implies NJ fixup.
-		cfg::_bool ppu_fix_vnan{ this, "PPU Fixup Vector NaN Values", true }; // Accuracy. Partial.
 		cfg::_bool ppu_set_vnan{ this, "PPU Accurate Vector NaN Values", false }; // Accuracy. Implies ppu_fix_vnan.
 		cfg::_bool ppu_set_fpcc{ this, "PPU Set FPCC Bits", false }; // Accuracy.
 
@@ -142,10 +142,12 @@ struct cfg_root : cfg::node
 		cfg::_bool stretch_to_display_area{ this, "Stretch To Display Area", false, true };
 		cfg::_bool force_high_precision_z_buffer{ this, "Force High Precision Z buffer" };
 		cfg::_bool strict_rendering_mode{ this, "Strict Rendering Mode" };
+		cfg::_enum<framebuffer_aliasing_bias> fb_aliasing_bias{ this, "Framebuffer Aliasing Heuristic Bias", framebuffer_aliasing_bias::_auto, true };
 		cfg::_bool disable_zcull_queries{ this, "Disable ZCull Occlusion Queries", false, true };
 		cfg::_bool disable_video_output{ this, "Disable Video Output", false, true };
 		cfg::_bool disable_vertex_cache{ this, "Disable Vertex Cache", false };
 		cfg::_bool disable_FIFO_reordering{ this, "Disable FIFO Reordering", false };
+		cfg::_bool emulate_depth_compare{ this, "Emulate Special Depth Comparison", false };
 		cfg::_bool frame_skip_enabled{ this, "Enable Frame Skip", false, true };
 		cfg::_bool force_cpu_blit_processing{ this, "Force CPU Blit", false, true }; // Debugging option
 		cfg::_bool disable_on_disk_shader_cache{ this, "Disable On-Disk Shader Cache", false };
@@ -157,6 +159,7 @@ struct cfg_root : cfg::node
 		cfg::_bool force_hw_MSAA_resolve{ this, "Force Hardware MSAA Resolve", false, true };
 		cfg::_bool stereo_enabled{ this, "3D Display Enabled", false };
 		cfg::_enum<stereo_render_mode_options> stereo_render_mode{ this, "3D Display Mode", stereo_render_mode_options::disabled, true };
+		cfg::_int<10, 99> screen_size{ this, "Screen size in inches", 24, false };
 		cfg::_bool debug_program_analyser{ this, "Debug Program Analyser", false };
 		cfg::_bool precise_zpass_count{ this, "Accurate ZCULL stats", true };
 		cfg::_int<1, 8> consecutive_frames_to_draw{ this, "Consecutive Frames To Draw", 1, true};
@@ -197,7 +200,7 @@ struct cfg_root : cfg::node
 		{
 			node_perf_overlay(cfg::node* _this) : cfg::node(_this, "Performance Overlay") {}
 
-			cfg::_bool perf_overlay_enabled{ this, "Enabled", false, true };
+			cfg::_bool enabled{ this, "Enabled", false, true };
 			cfg::_bool framerate_graph_enabled{ this, "Enable Framerate Graph", false, true };
 			cfg::_bool frametime_graph_enabled{ this, "Enable Frametime Graph", false, true };
 			cfg::uint<2, 6000> framerate_datapoint_count{ this, "Framerate datapoints", 50, true };
@@ -218,7 +221,7 @@ struct cfg_root : cfg::node
 			cfg::string background_body{ this, "Body Background (hex)", "#002339FF", true };
 			cfg::string color_title{ this, "Title Color (hex)", "#F26C24FF", true };
 			cfg::string background_title{ this, "Title Background (hex)", "#00000000", true };
-			cfg::_bool perf_overlay_use_window_space{this, "Use Window Space", false, true};
+			cfg::_bool use_window_space{this, "Use Window Space", false, true};
 
 		} perf_overlay{ this };
 
@@ -231,6 +234,15 @@ struct cfg_root : cfg::node
 			cfg::uint<0, 100> blur_strength{ this, "Blur effect strength", 0, true };
 
 		} shader_preloading_dialog{ this };
+
+		struct anaglyph_matrices : cfg::node
+		{
+			anaglyph_matrices(cfg::node* _this) : cfg::node(_this, "Custom Anaglyph Matrices") {}
+
+			cfg::node_map_entry left{ this, "Matrix Left" };
+			cfg::node_map_entry right{ this, "Matrix Right" };
+
+		} custom_anaglyph_matrices{ this };
 
 	} video{ this };
 
@@ -281,7 +293,7 @@ struct cfg_root : cfg::node
 		cfg::_bool paint_move_spheres{this, "Paint move spheres", false, true};
 		cfg::_bool allow_move_hue_set_by_game{this, "Allow move hue set by game", false, true};
 		cfg::_bool lock_overlay_input_to_player_one{this, "Lock overlay input to player one", false, true};
-		cfg::string midi_devices{this, "Emulated Midi devices", "ßßß@@@ßßß@@@ßßß@@@"};
+		cfg::string midi_devices{this, "Emulated Midi devices", "Keyboardßßß@@@Keyboardßßß@@@Keyboardßßß@@@"};
 		cfg::_bool load_sdl_mappings{ this, "Load SDL GameController Mappings", true };
 		cfg::_bool pad_debug_overlay{ this, "IO Debug overlay", false, true };
 		cfg::_bool mouse_debug_overlay{ this, "Mouse Debug overlay", false, true };
@@ -321,6 +333,7 @@ struct cfg_root : cfg::node
 		cfg::string dns{this, "DNS address", "8.8.8.8"};
 		cfg::string swap_list{this, "IP swap list", ""};
 		cfg::_bool upnp_enabled{this, "UPNP Enabled", false};
+		cfg::_bool derive_mac_from_psid{this, "Derive MAC from PSID", false};
 
 		cfg::_enum<np_psn_status> psn_status{this, "PSN status", np_psn_status::disabled};
 		cfg::string country{this, "PSN Country", "us"};
@@ -360,6 +373,7 @@ struct cfg_root : cfg::node
 		cfg::_bool show_fatal_error_hints{ this, "Show fatal error hints", false, true };
 		cfg::_bool show_capture_hints{ this, "Show capture hints", true, true };
 		cfg::_bool use_native_interface{ this, "Use native user interface", true };
+		cfg::_bool use_recursive_scan{this, "Use recursive scan", false};
 		cfg::string gdb_server{ this, "GDB Server", "127.0.0.1:2345" };
 		cfg::_bool silence_all_logs{ this, "Silence All Logs", false, true };
 		cfg::string title_format{ this, "Window Title Format", "FPS: %F | %R | %V | %T [%t]", true };

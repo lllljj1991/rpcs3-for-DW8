@@ -6,6 +6,7 @@
 #include "qt_utils.h"
 #include "progress_dialog.h"
 
+#include "Utilities/Thread.h"
 #include "Utilities/File.h"
 #include "Loader/ISO.h"
 
@@ -14,6 +15,8 @@
 #include "Emu/VFS.h"
 
 #include "Input/pad_thread.h"
+
+#include <thread>
 
 #include <QApplication>
 #include <QCheckBox>
@@ -364,6 +367,105 @@ void game_list_actions::ShowGameInfoDialog(const std::vector<game_info>& games)
 	QMessageBox::information(m_game_list_frame, tr("Game Info"), GetContentInfo(games).info);
 }
 
+void game_list_actions::ShowGameIntegrityDialog(const game_info& game)
+{
+	if (m_game_integrity_future.isRunning()) // Still running the last request
+		return;
+
+	// Initialize the validator (set also file size etc.)
+	m_iso_validator->init_hash(game->info.path);
+
+	// Game integrity check can take a while (in particular on non ssd/m.2 disks)
+	// so run it on a concurrent thread avoiding to block the entire GUI
+	m_game_integrity_future = QtConcurrent::run([this]()
+	{
+		thread_base::set_name("Game Integrity");
+
+		QString text;
+		std::string hash, game_name;
+		bool info_dialog = false;
+
+		if (m_iso_validator->calculate_hash(hash) != iso_hash_status::COMPLETED)
+		{
+			text = "Hash calculation failed!\n\nIntegrity check aborted";
+		}
+		else
+		{
+			text = "Integrity check completed!\n\n";
+
+			switch (m_iso_validator->check_integrity(hash, &game_name))
+			{
+			case iso_integrity_status::NO_MATCH:
+				text += tr("Game check NOT PASSED\n\nNo match found on DB or game corrupted:\n - Hash: %0")
+					.arg(QString::fromStdString(hash));
+				break;
+			case iso_integrity_status::FOUND_MATCH:
+				text += tr("Game check PASSED\n\nMatch found on DB:\n - Game: %0\n - Hash: %1")
+					.arg(QString::fromStdString(game_name))
+					.arg(QString::fromStdString(hash));
+
+				info_dialog = true;
+				break;
+			default:
+				text += tr("Error parsing DB");
+				break;
+			}
+		}
+
+		Emu.CallFromMainThread([this, text, info_dialog]()
+		{
+			if (info_dialog)
+			{
+				sys_log.success("%s", text.toStdString());
+				QMessageBox::information(m_game_list_frame, tr("Game Integrity"), text);
+			}
+			else
+			{
+				sys_log.error("%s", text.toStdString());
+				QMessageBox::critical(m_game_list_frame, tr("Game Integrity"), text);
+			}
+		}, nullptr, false);
+	});
+
+	progress_dialog* pdlg = new progress_dialog(tr("ISO File Hash Calculation"), tr("Calculating hash"), tr("Cancel"),
+		0, 100, false, m_game_list_frame);
+
+	pdlg->setAutoClose(false);
+	pdlg->setAutoReset(false);
+	pdlg->open();
+
+	connect(pdlg, &progress_dialog::canceled, m_game_list_frame, [this]()
+	{
+		m_iso_validator->abort_hash();
+	});
+
+	QTimer* update_timer = new QTimer(m_game_list_frame);
+
+	connect(update_timer, &QTimer::timeout, m_game_list_frame, [this, pdlg, update_timer]()
+	{
+		if (m_iso_validator->get_status() == iso_hash_status::INITIALIZED)
+		{
+			// Set progress in range 0-100
+			const int progress = m_iso_validator->get_size() ?
+				(static_cast<float>(m_iso_validator->get_bytes_read()) / m_iso_validator->get_size()) * 100 :
+				0;
+
+			pdlg->setValue(progress);
+		}
+		else
+		{
+			update_timer->stop();
+			update_timer->deleteLater();
+
+			// As last, close the progress bar (it will be already closed if the process was aborted) and delete the object
+			pdlg->close();
+			pdlg->deleteLater();
+		}
+	});
+
+	update_timer->start(500);
+}
+
 void game_list_actions::ShowDiskUsageDialog()
 {
 	if (m_disk_usage_future.isRunning()) // Still running the last request
@@ -373,6 +475,8 @@ void game_list_actions::ShowDiskUsageDialog()
 	// so run it on a concurrent thread avoiding to block the entire GUI
 	m_disk_usage_future = QtConcurrent::run([this]()
 	{
+		thread_base::set_name("Disk Usage");
+
 		const std::vector<std::pair<std::string, u64>> vfs_disk_usage = rpcs3::utils::get_vfs_disk_usage();
 		const u64 cache_disk_usage = rpcs3::utils::get_cache_disk_usage();
 
@@ -926,11 +1030,9 @@ void game_list_actions::BatchActionBySerials(progress_dialog* pdlg, const std::s
 			return false;
 		}
 
-		if (action(serial))
+		if (!action(serial))
 		{
-			const int done = index_ptr->load();
-			pdlg->setLabelText(progressLabel.arg(done + 1).arg(serials_size));
-			pdlg->SetValue(done + 1);
+			game_list_log.trace("Batch action for '%s' failed", serial);
 		}
 
 		(*index_ptr)++;
@@ -948,11 +1050,21 @@ void game_list_actions::BatchActionBySerials(progress_dialog* pdlg, const std::s
 			indices.append(i);
 		}
 
-		QFutureWatcher<void>* future_watcher = new QFutureWatcher<void>(m_game_list_frame);
+		QFutureWatcher<bool>* future_watcher = new QFutureWatcher<bool>(m_game_list_frame);
 
-		future_watcher->setFuture(QtConcurrent::map(std::move(indices), *iterate_over_serial));
+		future_watcher->setFuture(QtConcurrent::mapped(std::move(indices), *iterate_over_serial));
 
-		connect(future_watcher, &QFutureWatcher<void>::finished, m_game_list_frame, [=, this]()
+		connect(future_watcher, &QFutureWatcher<bool>::resultReadyAt, m_game_list_frame, [=](int index)
+		{
+			if (future_watcher->resultAt(index))
+			{
+				const int done = pdlg->value() + 1;
+				pdlg->setLabelText(progressLabel.arg(done).arg(serials_size));
+				pdlg->SetValue(done);
+			}
+		});
+
+		connect(future_watcher, &QFutureWatcher<bool>::finished, m_game_list_frame, [=, this]()
 		{
 			pdlg->setLabelText(progressLabel.arg(index->load()).arg(serials_size));
 			pdlg->setCancelButtonText(tr("OK"));
@@ -988,6 +1100,10 @@ void game_list_actions::BatchActionBySerials(progress_dialog* pdlg, const std::s
 
 		if ((*iterate_over_serial)(*index))
 		{
+			const int done = index->load();
+			pdlg->setLabelText(progressLabel.arg(done).arg(serials_size));
+			pdlg->SetValue(done);
+
 			QTimer::singleShot(1, m_game_list_frame, *periodic_func);
 			return;
 		}

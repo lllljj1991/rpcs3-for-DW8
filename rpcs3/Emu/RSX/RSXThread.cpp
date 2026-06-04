@@ -680,7 +680,7 @@ namespace rsx
 				ar(u32{0});
 			}
 		}
-		else if (u32 count = ar)
+		else if (u32 count{ar})
 		{
 			restore_fifo_count = count;
 			ar(restore_fifo_cmd);
@@ -1586,18 +1586,28 @@ namespace rsx
 
 				m_graphics_state.set(rsx::rtt_config_contested);
 
-				// TODO: Research clearing both depth AND color
-				// TODO: If context is creation_draw, deal with possibility of a lost buffer clear
-				if (depth_test_enabled || stencil_test_enabled || (!layout.color_write_enabled[index] && layout.zeta_write_enabled))
-				{
-					// Use address for depth data
-					layout.color_addresses[index] = 0;
-					continue;
-				}
-				else
+				if (g_cfg.video.fb_aliasing_bias == framebuffer_aliasing_bias::prefer_color
+					&& layout.color_write_enabled[index]
+					&& !layout.zeta_write_enabled)
 				{
 					// Use address for color data
 					layout.zeta_address = 0;
+				}
+				else
+				{
+					// TODO: Research clearing both depth AND color
+					// TODO: If context is creation_draw, deal with possibility of a lost buffer clear
+					if (depth_test_enabled || stencil_test_enabled || (!layout.color_write_enabled[index] && layout.zeta_write_enabled))
+					{
+						// Use address for depth data
+						layout.color_addresses[index] = 0;
+						continue;
+					}
+					else
+					{
+						// Use address for color data
+						layout.zeta_address = 0;
+					}
 				}
 			}
 
@@ -1956,6 +1966,36 @@ namespace rsx
 		return true;
 	}
 
+	rsx::flags32_t thread::get_fragment_program_export_config()
+	{
+		if (!g_cfg.video.emulate_depth_compare) [[ likely ]]
+		{
+			return 0;
+		}
+
+		if (m_ctx->register_state->current_draw_clause.classify_mode() != primitive_class::polygon)
+		{
+			return 0;
+		}
+
+		u32 expected_ctrl = 0;
+
+		if (m_framebuffer_layout.zeta_address &&
+			m_ctx->register_state->depth_test_enabled() &&
+			m_ctx->register_state->depth_func() == rsx::comparison_function::equal)
+		{
+			expected_ctrl |= RSX_SHADER_CONTROL_EMULATE_DEPTH_COMPARE;
+
+			if (backend_config.supports_hw_msaa &&
+				m_ctx->register_state->surface_antialias() != rsx::surface_antialiasing::center_1_sample)
+			{
+				expected_ctrl |= RSX_SHADER_CONTROL_MULTISAMPLED_ZBUFFER;
+			}
+		}
+
+		return expected_ctrl;
+	}
+
 	void thread::prefetch_fragment_program()
 	{
 		if (!m_graphics_state.test(rsx::pipeline_state::fragment_program_ucode_dirty))
@@ -2050,6 +2090,18 @@ namespace rsx
 	{
 		m_program_cache_hint.invalidate(m_graphics_state.load());
 
+		constexpr u32 fs_export_config_mask = (RSX_SHADER_CONTROL_EMULATE_DEPTH_COMPARE | RSX_SHADER_CONTROL_MULTISAMPLED_ZBUFFER);
+		if (u32 export_ctrl = get_fragment_program_export_config();
+			(current_fragment_program.ctrl & fs_export_config_mask) != export_ctrl)
+		{
+			// Update control bits for immediate consumers
+			current_fragment_program.ctrl &= ~fs_export_config_mask;
+			current_fragment_program.ctrl |= export_ctrl;
+
+			// Signal backend to reload pipeline
+			m_graphics_state.set(rsx::pipeline_state::fragment_program_state_dirty);
+		}
+
 		prefetch_vertex_program();
 		prefetch_fragment_program();
 	}
@@ -2143,6 +2195,8 @@ namespace rsx
 					current_fragment_program.ctrl |= RSX_SHADER_CONTROL_ALPHA_TO_COVERAGE;
 				}
 			}
+
+			current_fragment_program.ctrl |= get_fragment_program_export_config();
 		}
 		else if (m_ctx->register_state->point_sprite_enabled() &&
 			m_ctx->register_state->current_draw_clause.primitive == primitive_type::points)
@@ -2311,7 +2365,7 @@ namespace rsx
 				{
 					m_graphics_state |= rsx::zeta_address_is_cyclic;
 
-					if (!(current_fragment_program.ctrl & (CELL_GCM_SHADER_CONTROL_DEPTH_EXPORT | RSX_SHADER_CONTROL_META_USES_DISCARD)) &&
+					if (!(current_fragment_program.ctrl & (CELL_GCM_SHADER_CONTROL_DEPTH_EXPORT | RSX_SHADER_CONTROL_META_USES_DISCARD | RSX_SHADER_CONTROL_EMULATE_DEPTH_COMPARE)) &&
 						m_framebuffer_layout.zeta_write_enabled)
 					{
 						current_fragment_program.ctrl |= RSX_SHADER_CONTROL_DISABLE_EARLY_Z;
@@ -3414,7 +3468,7 @@ namespace rsx
 		current_display_buffer = buffer;
 		m_queued_flip.emu_flip = true;
 		m_queued_flip.in_progress = true;
-		m_queued_flip.skip_frame |= g_cfg.video.disable_video_output && !g_cfg.video.perf_overlay.perf_overlay_enabled;
+		m_queued_flip.skip_frame |= g_cfg.video.disable_video_output && !g_cfg.video.perf_overlay.enabled;
 
 		flip(m_queued_flip);
 

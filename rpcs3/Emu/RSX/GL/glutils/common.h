@@ -53,6 +53,7 @@ namespace gl
 {
 	using flags32_t = u32;
 	using handle32_t = u32;
+	using handle64_t = u64;
 
 	template<typename Type, uint BindId, uint GetStateId>
 	class save_binding_state_base
@@ -99,7 +100,10 @@ namespace gl
 	// Very useful util when capturing traces with RenderDoc
 	static inline void push_debug_label(std::string_view label)
 	{
-		glInsertEventMarkerEXT(static_cast<GLsizei>(label.size()), label.data());
+		if (glInsertEventMarkerEXT)
+		{
+			glInsertEventMarkerEXT(static_cast<GLsizei>(label.size()), label.data());
+		}
 	}
 
 	// Checks if GL state is still valid

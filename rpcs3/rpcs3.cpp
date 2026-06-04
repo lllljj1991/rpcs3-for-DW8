@@ -85,7 +85,7 @@ static const bool s_init_locale = []()
 
 static semaphore<> s_qt_init;
 
-static atomic_t<bool> s_headless = false;
+atomic_t<bool> g_headless = false;
 static atomic_t<bool> s_no_gui = false;
 static atomic_t<char*> s_argv0 = nullptr;
 static bool s_is_error_launch = false;
@@ -185,16 +185,23 @@ std::set<std::string> get_one_drive_paths()
 			fmt::append(buf, "\nSerialized Object: %s", g_tls_serialize_name);
 		}
 
-		const system_state state = Emu.GetStatus(false);
-
-		if (state == system_state::stopped)
+		if (Emulator::IsAvailable())
 		{
-			fmt::append(buf, "\nEmulation is stopped");
+			const system_state state = Emu.GetStatus(false);
+
+			if (state == system_state::stopped)
+			{
+				fmt::append(buf, "\nEmulation is stopped");
+			}
+			else
+			{
+				const std::string name = Emu.GetTitleAndTitleID();
+				fmt::append(buf, "\nTitle: \"%s\" (emulation is %s)", name.empty() ? "N/A" : name.c_str(), state == system_state::stopping ? "stopping" : "running");
+			}
 		}
 		else
 		{
-			const std::string& name = Emu.GetTitleAndTitleID();
-			fmt::append(buf, "\nTitle: \"%s\" (emulation is %s)", name.empty() ? "N/A" : name.data(), state == system_state::stopping ? "stopping" : "running");
+			fmt::append(buf, "\nEmulation object is unavailable (process teardown)");
 		}
 
 		fmt::append(buf, "\nBuild: \"%s\"", rpcs3::get_verbose_version());
@@ -207,7 +214,7 @@ std::set<std::string> get_one_drive_paths()
 
 	std::string_view text = s_is_error_launch ? _text : buf;
 
-	if (s_headless)
+	if (g_headless)
 	{
 		utils::attach_console(utils::console_stream::std_err, true);
 
@@ -656,7 +663,7 @@ int run_rpcs3(int argc, char** argv)
 	// Initialize thread pool finalizer (on first use)
 	static_cast<void>(named_thread("", [](int) {}));
 
-	static std::unique_ptr<logs::listener> log_file;
+	std::unique_ptr<logs::listener> log_file;
 	{
 		// Check free space
 		fs::device_stat stats{};
@@ -669,8 +676,16 @@ int run_rpcs3(int argc, char** argv)
 		log_file = logs::make_file_listener(log_name, stats.avail_free / 4);
 	}
 
-	static std::unique_ptr<fatal_error_listener> fatal_listener = std::make_unique<fatal_error_listener>();
+	auto fatal_listener = std::make_unique<fatal_error_listener>();
 	logs::listener::add(fatal_listener.get());
+
+	struct log_listener_shutdown_guard
+	{
+		~log_listener_shutdown_guard()
+		{
+			logs::listener::shutdown_all();
+		}
+	} log_listener_shutdown;
 
 	{
 		// Write RPCS3 version
@@ -840,6 +855,11 @@ int run_rpcs3(int argc, char** argv)
 
 	parser.process(app->arguments());
 
+	for (const auto& opt : parser.optionNames())
+	{
+		sys_log.notice("Option passed via command line: %s %s", opt, parser.value(opt));
+	}
+
 	// Don't start up the full rpcs3 gui if we just want the version or help.
 	if (parser.isSet(version_option) || parser.isSet(help_option))
 		return 0;
@@ -962,7 +982,7 @@ int run_rpcs3(int argc, char** argv)
 	}
 	else if (headless_application* headless_app = qobject_cast<headless_application*>(app.data()))
 	{
-		s_headless = true;
+		g_headless = true;
 
 		headless_app->SetActiveUser(active_user);
 
@@ -1144,11 +1164,11 @@ int run_rpcs3(int argc, char** argv)
 				}
 				else if (parser.isSet(arg_installfw))
 				{
-					gui_app->m_main_window->InstallPup(parser.value(installfw_option));
+					main_window::InstallPup(gui_app->m_main_window, parser.value(installfw_option));
 				}
 				else
 				{
-					gui_app->m_main_window->InstallPackages({parser.value(installpkg_option)});
+					main_window::InstallPackages(gui_app->m_main_window, {parser.value(installpkg_option)});
 				}
 			}
 			else
@@ -1158,13 +1178,18 @@ int run_rpcs3(int argc, char** argv)
 		}
 		else
 		{
-			report_fatal_error("Cannot perform installation in headless mode!");
-		}
-	}
+			if (parser.isSet(arg_installfw))
+			{
+				main_window::InstallPup(nullptr, parser.value(installfw_option));
+			}
 
-	for (const auto& opt : parser.optionNames())
-	{
-		sys_log.notice("Option passed via command line: %s %s", opt, parser.value(opt));
+			if (parser.isSet(arg_installpkg))
+			{
+				main_window::InstallPackages(nullptr, {parser.value(installpkg_option)});
+			}
+
+			return 0;
+		}
 	}
 
 	if (parser.isSet(arg_savestate))
@@ -1185,7 +1210,7 @@ int run_rpcs3(int argc, char** argv)
 			{
 				sys_log.error("Booting savestate '%s' failed: reason: %s", path, error);
 
-				if (s_headless || s_no_gui)
+				if (g_headless || s_no_gui)
 				{
 					report_fatal_error(fmt::format("Booting savestate '%s' failed!\n\nReason: %s", path, error));
 				}
@@ -1208,7 +1233,7 @@ int run_rpcs3(int argc, char** argv)
 			{
 				sys_log.error("Booting rsx capture '%s' failed", path);
 
-				if (s_headless || s_no_gui)
+				if (g_headless || s_no_gui)
 				{
 					report_fatal_error(fmt::format("Booting rsx capture '%s' failed!", path));
 				}
@@ -1317,20 +1342,20 @@ int run_rpcs3(int argc, char** argv)
 			{
 				sys_log.error("Booting '%s' with cli argument failed: reason: %s", path, error);
 
-				if (s_headless || s_no_gui)
+				if (g_headless || s_no_gui)
 				{
 					report_fatal_error(fmt::format("Booting '%s' failed!\n\nReason: %s", path, error));
 				}
 			}
 		});
 	}
-	else if (s_headless || s_no_gui)
+	else if (g_headless || s_no_gui)
 	{
 		// If launched from CMD
 		utils::attach_console(utils::console_stream::std_out | utils::console_stream::std_err, false);
 
-		sys_log.error("Cannot run %s mode without boot target. Terminating...", s_headless ? "headless" : "no-gui");
-		fprintf(stderr, "Cannot run %s mode without boot target. Terminating...\n", s_headless ? "headless" : "no-gui");
+		sys_log.error("Cannot run %s mode without boot target. Terminating...", g_headless ? "headless" : "no-gui");
+		fprintf(stderr, "Cannot run %s mode without boot target. Terminating...\n", g_headless ? "headless" : "no-gui");
 
 		if (s_no_gui)
 		{

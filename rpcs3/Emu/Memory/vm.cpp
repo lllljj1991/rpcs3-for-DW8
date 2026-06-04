@@ -1,7 +1,6 @@
 #include "stdafx.h"
 #include "vm_locking.h"
 #include "vm_ptr.h"
-#include "vm_ref.h"
 #include "vm_reservation.h"
 
 #include "Utilities/Thread.h"
@@ -1812,7 +1811,7 @@ namespace vm
 
 		while (true)
 		{
-			const u8 flags0 = ar;
+			const u8 flags0{ar};
 
 			if (!(flags0 & page_allocated))
 			{
@@ -1820,8 +1819,8 @@ namespace vm
 				break;
 			}
 
-			const u32 addr0 = ar;
-			const u32 size0 = ar;
+			const u32 addr0{ar};
+			const u32 size0{ar};
 
 			u64 pflags = 0;
 
